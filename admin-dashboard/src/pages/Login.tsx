@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import {
   Box,
   Card,
@@ -11,7 +11,9 @@ import {
   Container,
   Alert,
   CircularProgress,
+  Divider,
 } from '@mui/material';
+import { Google as GoogleIcon } from '@mui/icons-material';
 import { auth } from '../utils/firebase';
 
 export const Login: React.FC = () => {
@@ -28,11 +30,25 @@ export const Login: React.FC = () => {
 
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      // AuthContext will automatically update and handle redirection or rejection
       navigate('/');
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'Failed to sign in. Please verify your credentials.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setError('');
+    setLoading(true);
+    try {
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
+      navigate('/');
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || 'Failed to authenticate with Google.');
     } finally {
       setLoading(false);
     }
@@ -91,11 +107,34 @@ export const Login: React.FC = () => {
                 size="large"
                 fullWidth
                 disabled={loading}
-                sx={{ py: 1.5, fontWeight: 'bold' }}
+                sx={{ py: 1.5, fontWeight: 'bold', mb: 2 }}
               >
                 {loading ? <CircularProgress size={24} color="inherit" /> : 'Log In'}
               </Button>
             </form>
+
+            <Divider sx={{ my: 2 }}>OR</Divider>
+
+            <Button
+              variant="outlined"
+              size="large"
+              fullWidth
+              disabled={loading}
+              onClick={handleGoogleLogin}
+              startIcon={<GoogleIcon />}
+              sx={{
+                py: 1.5,
+                fontWeight: 'bold',
+                borderColor: 'grey.300',
+                color: 'text.primary',
+                '&:hover': {
+                  borderColor: 'grey.400',
+                  bgcolor: 'action.hover',
+                },
+              }}
+            >
+              Sign In with Google
+            </Button>
           </CardContent>
         </Card>
       </Container>

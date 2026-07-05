@@ -3,6 +3,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndP
 import type { User } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
+import { Alert } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import * as Device from 'expo-device';
 import { auth, db, functions } from '../services/firebase';
@@ -14,6 +15,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name: string) => Promise<void>;
   logout: () => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -126,6 +128,54 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // 6. Sign in with Google (Integration scaffold & Simulator check-in)
+  const loginWithGoogle = async () => {
+    setLoading(true);
+    try {
+      Alert.alert(
+        'Google Authentication',
+        'This binds your Google account to this device. Continue?',
+        [
+          { text: 'Cancel', style: 'cancel', onPress: () => setLoading(false) },
+          {
+            text: 'Sign In',
+            onPress: async () => {
+              try {
+                // In production:
+                // const result = await GoogleSignin.signIn();
+                // const credential = GoogleAuthProvider.credential(result.idToken);
+                // const userCredential = await signInWithCredential(auth, credential);
+                
+                // For development simulation:
+                const mockEmail = `google.${Math.random().toString(36).substring(7)}@gmail.com`;
+                const userCredential = await createUserWithEmailAndPassword(auth, mockEmail, 'google-mock-password-123');
+                const uid = userCredential.user.uid;
+                
+                await setDoc(doc(db, 'users', uid), {
+                  email: mockEmail,
+                  name: 'Google Student',
+                  role: 'student',
+                  status: 'active',
+                  createdAt: serverTimestamp(),
+                });
+                
+                const devId = await getOrCreateDeviceId();
+                await checkInDevice(userCredential.user, devId);
+              } catch (e: any) {
+                Alert.alert('Google Sign-In Error', e.message || 'Verification failed.');
+              } finally {
+                setLoading(false);
+              }
+            }
+          }
+        ]
+      );
+    } catch (error) {
+      setLoading(false);
+      throw error;
+    }
+  };
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
@@ -136,7 +186,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
           const userSnap = await getDoc(doc(db, 'users', currentUser.uid));
           if (userSnap.exists() && userSnap.data()?.status === 'blocked') {
-            alert('Your account has been suspended by the administrator.');
+            Alert.alert('Suspended', 'Your account has been suspended by the administrator.');
             await signOut(auth);
             setUser(null);
           } else {
@@ -157,7 +207,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, deviceId, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, deviceId, loading, login, register, logout, loginWithGoogle }}>
       {children}
     </AuthContext.Provider>
   );

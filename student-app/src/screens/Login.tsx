@@ -13,7 +13,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 
 export const Login: React.FC = () => {
-  const { login, register } = useAuth();
+  const { login, register, loginWithGoogle } = useAuth();
   
   const [isSignUp, setIsSignUp] = useState(false);
   const [name, setName] = useState('');
@@ -114,6 +114,14 @@ export const Login: React.FC = () => {
             ) : (
               <Text style={styles.submitBtnText}>{isSignUp ? 'Sign Up' : 'Sign In'}</Text>
             )}
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.submitBtn, styles.googleBtn]} 
+            onPress={loginWithGoogle} 
+            disabled={loading}
+          >
+            <Text style={styles.googleBtnText}>Continue with Google</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -223,5 +231,16 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 16,
     fontWeight: '500',
+  },
+  googleBtn: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: '#475569',
+    marginTop: 10,
+  },
+  googleBtnText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '700',
   },
 });
