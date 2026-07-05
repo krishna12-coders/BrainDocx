@@ -17,7 +17,7 @@ import {
   ShoppingCart as ShoppingCartIcon,
   DeveloperMode as DeviceIcon,
 } from '@mui/icons-material';
-import { collection, onSnapshot, query, limit, orderBy } from 'firebase/firestore';
+import { ref, onValue } from 'firebase/database';
 import { db } from '../utils/firebase';
 
 interface MetricCardProps {
@@ -72,34 +72,47 @@ export const Dashboard: React.FC = () => {
 
   useEffect(() => {
     // 1. Setup real-time listeners for stats
-    const unsubPdfs = onSnapshot(collection(db, 'pdfs'), (snap) => {
-      setStats(prev => ({ ...prev, pdfs: snap.size }));
+    const unsubPdfs = onValue(ref(db, 'pdfs'), (snap) => {
+      setStats(prev => ({ ...prev, pdfs: snap.exists() ? Object.keys(snap.val() || {}).length : 0 }));
     });
 
-    const unsubUsers = onSnapshot(collection(db, 'users'), (snap) => {
-      setStats(prev => ({ ...prev, users: snap.size }));
+    const unsubUsers = onValue(ref(db, 'users'), (snap) => {
+      setStats(prev => ({ ...prev, users: snap.exists() ? Object.keys(snap.val() || {}).length : 0 }));
     });
 
-    const unsubPurchases = onSnapshot(collection(db, 'purchases'), (snap) => {
-      setStats(prev => ({ ...prev, purchases: snap.size }));
+    const unsubPurchases = onValue(ref(db, 'purchases'), (snap) => {
+      let totalPurchases = 0;
+      if (snap.exists()) {
+        snap.forEach((userPurchasesSnap) => {
+          totalPurchases += Object.keys(userPurchasesSnap.val() || {}).length;
+        });
+      }
+      setStats(prev => ({ ...prev, purchases: totalPurchases }));
     });
 
-    const unsubDevices = onSnapshot(collection(db, 'devices'), (snap) => {
-      setStats(prev => ({ ...prev, devices: snap.size }));
+    const unsubDevices = onValue(ref(db, 'devices'), (snap) => {
+      let totalDevices = 0;
+      if (snap.exists()) {
+        snap.forEach((userDevicesSnap) => {
+          totalDevices += Object.keys(userDevicesSnap.val() || {}).length;
+        });
+      }
+      setStats(prev => ({ ...prev, devices: totalDevices }));
     });
 
-    // 2. Fetch 5 recent purchases
-    const purchasesQuery = query(
-      collection(db, 'purchases'),
-      orderBy('purchaseDate', 'desc'),
-      limit(5)
-    );
-    const unsubRecentPurchases = onSnapshot(purchasesQuery, (snap) => {
+    // 2. Fetch recent purchases (Flatten & Sort locally)
+    const unsubRecentPurchases = onValue(ref(db, 'purchases'), (snap) => {
       const items: any[] = [];
-      snap.forEach((doc) => {
-        items.push({ id: doc.id, ...doc.data() });
-      });
-      setRecentPurchases(items);
+      if (snap.exists()) {
+        snap.forEach((userPurchasesSnap) => {
+          userPurchasesSnap.forEach((purchaseDoc) => {
+            items.push({ id: purchaseDoc.key, ...purchaseDoc.val() });
+          });
+        });
+      }
+      // Sort by purchaseDate descending
+      items.sort((a, b) => (b.purchaseDate || 0) - (a.purchaseDate || 0));
+      setRecentPurchases(items.slice(0, 5));
       setLoading(false);
     });
 
@@ -123,7 +136,7 @@ export const Dashboard: React.FC = () => {
   return (
     <Box>
       <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
           <MetricCard
             title="Premium PDFs"
             value={stats.pdfs}
@@ -131,7 +144,7 @@ export const Dashboard: React.FC = () => {
             color="primary"
           />
         </Grid>
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
           <MetricCard
             title="Registered Students"
             value={stats.users}
@@ -139,7 +152,7 @@ export const Dashboard: React.FC = () => {
             color="secondary"
           />
         </Grid>
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
           <MetricCard
             title="Total Purchases"
             value={stats.purchases}
@@ -147,7 +160,7 @@ export const Dashboard: React.FC = () => {
             color="success"
           />
         </Grid>
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
           <MetricCard
             title="Bound Devices"
             value={stats.devices}
@@ -158,7 +171,7 @@ export const Dashboard: React.FC = () => {
       </Grid>
 
       <Grid container spacing={3}>
-        <Grid item xs={12} md={6}>
+        <Grid size={{ xs: 12, md: 6 }}>
           <Card sx={{ height: '100%', boxShadow: 1, borderRadius: 2 }}>
             <CardContent>
               <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2 }}>
@@ -175,7 +188,7 @@ export const Dashboard: React.FC = () => {
                           primary={`PDF ID: ${purchase.pdfId}`}
                           secondary={`User ID: ${purchase.userId} | Date: ${
                             purchase.purchaseDate
-                              ? new Date(purchase.purchaseDate.seconds * 1000).toLocaleString()
+                              ? new Date(typeof purchase.purchaseDate === 'number' ? purchase.purchaseDate : purchase.purchaseDate.seconds * 1000).toLocaleString()
                               : 'Pending'
                           }`}
                         />
@@ -189,7 +202,7 @@ export const Dashboard: React.FC = () => {
           </Card>
         </Grid>
         
-        <Grid item xs={12} md={6}>
+        <Grid size={{ xs: 12, md: 6 }}>
           <Card sx={{ height: '100%', boxShadow: 1, borderRadius: 2 }}>
             <CardContent>
               <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2 }}>

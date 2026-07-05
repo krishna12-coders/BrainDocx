@@ -2,7 +2,7 @@ import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 
 admin.initializeApp();
-const db = admin.firestore();
+const db = admin.database();
 
 // 1. Register Device (Max 2 devices check)
 export const registerDevice = functions.https.onCall(async (data, context) => {
@@ -23,15 +23,15 @@ export const registerDevice = functions.https.onCall(async (data, context) => {
     );
   }
 
-  const deviceRef = db.collection('devices').doc(deviceId);
-  const deviceSnap = await deviceRef.get();
+  const deviceRef = db.ref(`devices/${uid}/${deviceId}`);
+  const deviceSnap = await deviceRef.once('value');
 
   // If already registered and active to this user, update check-in timestamp and return success
-  if (deviceSnap.exists) {
-    const devData = deviceSnap.data();
-    if (devData && devData.userId === uid && devData.status === 'active') {
+  if (deviceSnap.exists()) {
+    const devData = deviceSnap.val();
+    if (devData && devData.status === 'active') {
       await deviceRef.update({
-        lastUsedAt: admin.firestore.FieldValue.serverTimestamp(),
+        lastUsedAt: admin.database.ServerValue.TIMESTAMP,
         deviceModel,
         osVersion: osVersion || 'unknown',
       });
@@ -43,17 +43,21 @@ export const registerDevice = functions.https.onCall(async (data, context) => {
         'This device has been blocked by the administrator.'
       );
     }
-    // If it was registered to a different user, we will re-evaluate limits for the current user
   }
 
   // Check how many active devices this user currently has
-  const activeDevicesSnap = await db
-    .collection('devices')
-    .where('userId', '==', uid)
-    .where('status', '==', 'active')
-    .get();
+  const devicesRef = db.ref(`devices/${uid}`);
+  const devicesSnap = await devicesRef.once('value');
+  let activeCount = 0;
 
-  const activeCount = activeDevicesSnap.size;
+  if (devicesSnap.exists()) {
+    const devices = devicesSnap.val();
+    for (const devId in devices) {
+      if (devices[devId].status === 'active') {
+        activeCount++;
+      }
+    }
+  }
 
   if (activeCount >= 2) {
     throw new functions.https.HttpsError(
@@ -68,8 +72,8 @@ export const registerDevice = functions.https.onCall(async (data, context) => {
     userId: uid,
     deviceModel,
     osVersion: osVersion || 'unknown',
-    registeredAt: admin.firestore.FieldValue.serverTimestamp(),
-    lastUsedAt: admin.firestore.FieldValue.serverTimestamp(),
+    registeredAt: admin.database.ServerValue.TIMESTAMP,
+    lastUsedAt: admin.database.ServerValue.TIMESTAMP,
     status: 'active',
   });
 
@@ -96,8 +100,9 @@ export const getDecryptionKey = functions.https.onCall(async (data, context) => 
   }
 
   // A. Verify that the device is registered to this user and is active
-  const deviceSnap = await db.collection('devices').doc(deviceId).get();
-  if (!deviceSnap.exists || deviceSnap.data()?.userId !== uid || deviceSnap.data()?.status !== 'active') {
+  const deviceRef = db.ref(`devices/${uid}/${deviceId}`);
+  const deviceSnap = await deviceRef.once('value');
+  if (!deviceSnap.exists() || deviceSnap.val()?.status !== 'active') {
     throw new functions.https.HttpsError(
       'permission-denied',
       'This device is not authorized. Please log in from this device again.'
@@ -105,22 +110,21 @@ export const getDecryptionKey = functions.https.onCall(async (data, context) => 
   }
 
   // B. Verify that the user is not blocked
-  const userSnap = await db.collection('users').doc(uid).get();
-  if (userSnap.exists && userSnap.data()?.status === 'blocked') {
+  const userSnap = await db.ref(`users/${uid}`).once('value');
+  if (userSnap.exists() && userSnap.val()?.status === 'blocked') {
     throw new functions.https.HttpsError(
       'permission-denied',
       'Your user account has been disabled.'
     );
   }
 
-  // C. Verify purchase (userId_pdfId)
-  const purchaseId = `${uid}_${pdfId}`;
-  const purchaseSnap = await db.collection('purchases').doc(purchaseId).get();
-
-  const isAdmin = userSnap.exists && userSnap.data()?.role === 'admin';
+  // C. Verify purchase (userId -> pdfId)
+  const purchaseRef = db.ref(`purchases/${uid}/${pdfId}`);
+  const purchaseSnap = await purchaseRef.once('value');
+  const isAdmin = userSnap.exists() && userSnap.val()?.role === 'admin';
 
   if (!isAdmin) {
-    if (!purchaseSnap.exists || purchaseSnap.data()?.status !== 'active') {
+    if (!purchaseSnap.exists() || purchaseSnap.val()?.status !== 'active') {
       throw new functions.https.HttpsError(
         'permission-denied',
         'You have not purchased this document, or your purchase has been revoked.'
@@ -129,15 +133,15 @@ export const getDecryptionKey = functions.https.onCall(async (data, context) => 
   }
 
   // D. Fetch key from pdf_keys (which is private and not readable by clients)
-  const keySnap = await db.collection('pdf_keys').doc(pdfId).get();
-  if (!keySnap.exists) {
+  const keySnap = await db.ref(`pdf_keys/${pdfId}`).once('value');
+  if (!keySnap.exists()) {
     throw new functions.https.HttpsError(
       'not-found',
       'Decryption key not found for this document.'
     );
   }
 
-  const keyData = keySnap.data();
+  const keyData = keySnap.val();
   return {
     key: keyData?.key, // AES-256 key (base64 encoded string)
     iv: keyData?.iv || '', // Initialisation Vector
@@ -164,36 +168,34 @@ export const purchasePdf = functions.https.onCall(async (data, context) => {
   }
 
   // Check if PDF exists
-  const pdfSnap = await db.collection('pdfs').doc(pdfId).get();
-  if (!pdfSnap.exists) {
+  const pdfSnap = await db.ref(`pdfs/${pdfId}`).once('value');
+  if (!pdfSnap.exists()) {
     throw new functions.https.HttpsError('not-found', 'PDF document not found.');
   }
 
   // If coupon is provided, we can validate it
   let discount = 0;
   if (couponCode) {
-    const couponSnap = await db.collection('coupons').doc(couponCode.toUpperCase()).get();
-    if (couponSnap.exists && couponSnap.data()?.active) {
-      discount = couponSnap.data()?.discountPercent || 0;
+    const couponSnap = await db.ref(`coupons/${couponCode.toUpperCase()}`).once('value');
+    if (couponSnap.exists() && couponSnap.val()?.active) {
+      discount = couponSnap.val()?.discountPercent || 0;
     }
   }
 
-  const purchaseId = `${uid}_${pdfId}`;
-  await db.collection('purchases').doc(purchaseId).set({
-    id: purchaseId,
+  await db.ref(`purchases/${uid}/${pdfId}`).set({
     userId: uid,
     pdfId: pdfId,
-    purchaseDate: admin.firestore.FieldValue.serverTimestamp(),
+    purchaseDate: admin.database.ServerValue.TIMESTAMP,
     status: 'active',
     discountApplied: discount,
   });
 
   // Log purchase analytics
-  await db.collection('analytics').add({
+  await db.ref('analytics').push({
     eventType: 'purchase',
     userId: uid,
     pdfId: pdfId,
-    timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    timestamp: admin.database.ServerValue.TIMESTAMP,
     metadata: { couponCode: couponCode || 'none', discount },
   });
 
@@ -210,8 +212,8 @@ export const setUserStatus = functions.https.onCall(async (data, context) => {
   }
 
   // Ensure caller is admin
-  const callerSnap = await db.collection('users').doc(context.auth.uid).get();
-  if (!callerSnap.exists || callerSnap.data()?.role !== 'admin') {
+  const callerSnap = await db.ref(`users/${context.auth.uid}`).once('value');
+  if (!callerSnap.exists() || callerSnap.val()?.role !== 'admin') {
     throw new functions.https.HttpsError(
       'permission-denied',
       'Only administrators can perform this action.'
@@ -226,26 +228,20 @@ export const setUserStatus = functions.https.onCall(async (data, context) => {
     );
   }
 
-  await db.collection('users').doc(targetUserId).update({
+  await db.ref(`users/${targetUserId}`).update({
     status: status,
   });
 
-  // If blocking user, also disable their registered devices
-  if (status === 'blocked') {
-    const devicesSnap = await db.collection('devices').where('userId', '==', targetUserId).get();
-    const batch = db.batch();
-    devicesSnap.docs.forEach((doc) => {
-      batch.update(doc.ref, { status: 'blocked' });
-    });
-    await batch.commit();
-  } else {
-    // Re-activating: unblock devices
-    const devicesSnap = await db.collection('devices').where('userId', '==', targetUserId).get();
-    const batch = db.batch();
-    devicesSnap.docs.forEach((doc) => {
-      batch.update(doc.ref, { status: 'active' });
-    });
-    await batch.commit();
+  // Toggle devices status for this user
+  const devicesRef = db.ref(`devices/${targetUserId}`);
+  const devicesSnap = await devicesRef.once('value');
+  if (devicesSnap.exists()) {
+    const devices = devicesSnap.val();
+    const updates: any = {};
+    for (const devId in devices) {
+      updates[`devices/${targetUserId}/${devId}/status`] = status;
+    }
+    await db.ref().update(updates);
   }
 
   return { success: true, message: `User status set to ${status}.` };

@@ -1,18 +1,18 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import type { User } from 'firebase/auth';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { ref, get, set } from 'firebase/database';
 import { httpsCallable } from 'firebase/functions';
 import { Alert } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import * as Device from 'expo-device';
 import { auth, db, functions } from '../services/firebase';
 
-const getDocWithTimeout = (docRef: any, timeoutMs: number = 3000) => {
+const getDocWithTimeout = (dbRef: any, timeoutMs: number = 3000) => {
   return Promise.race([
-    getDoc(docRef),
+    get(dbRef),
     new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Firestore connection timeout. Please verify that Firestore Database is enabled in your Firebase console.')), timeoutMs)
+      setTimeout(() => reject(new Error('Database connection timeout. Please verify that your Realtime Database is created and enabled in your Firebase console.')), timeoutMs)
     )
   ]) as Promise<any>;
 };
@@ -108,13 +108,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const uid = userCredential.user.uid;
 
-      // Create student user document in Firestore
-      await setDoc(doc(db, 'users', uid), {
+      // Create student user document in RTDB
+      await set(ref(db, `users/${uid}`), {
         email,
         name,
         role: 'student',
         status: 'active',
-        createdAt: serverTimestamp(),
+        createdAt: Date.now(),
       });
 
       const devId = await getOrCreateDeviceId();
@@ -160,12 +160,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 const userCredential = await createUserWithEmailAndPassword(auth, mockEmail, 'google-mock-password-123');
                 const uid = userCredential.user.uid;
                 
-                await setDoc(doc(db, 'users', uid), {
+                await set(ref(db, `users/${uid}`), {
                   email: mockEmail,
                   name: 'Google Student',
                   role: 'student',
                   status: 'active',
-                  createdAt: serverTimestamp(),
+                  createdAt: Date.now(),
                 });
                 
                 const devId = await getOrCreateDeviceId();
@@ -193,8 +193,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         
         // Fetch student user profile status (check if blocked)
         try {
-          const userSnap = await getDocWithTimeout(doc(db, 'users', currentUser.uid));
-          if (userSnap.exists() && userSnap.data()?.status === 'blocked') {
+          const userSnap = await getDocWithTimeout(ref(db, `users/${currentUser.uid}`));
+          if (userSnap.exists() && userSnap.val()?.status === 'blocked') {
             Alert.alert('Suspended', 'Your account has been suspended by the administrator.');
             await signOut(auth);
             setUser(null);
@@ -203,7 +203,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         } catch (e: any) {
           console.error('Error checking user status:', e);
-          Alert.alert('Database Connection Failed', e.message || 'Please check your internet connection or verify Firestore Database is enabled.');
+          Alert.alert('Database Connection Failed', e.message || 'Please check your internet connection or verify Realtime Database is enabled.');
           await signOut(auth);
           setUser(null);
         }

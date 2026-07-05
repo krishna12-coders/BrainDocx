@@ -1,14 +1,14 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import type { User } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { ref, get } from 'firebase/database';
 import { auth, db } from '../utils/firebase';
 
-const getDocWithTimeout = (docRef: any, timeoutMs: number = 3000) => {
+const getDocWithTimeout = (dbRef: any, timeoutMs: number = 3000) => {
   return Promise.race([
-    getDoc(docRef),
+    get(dbRef),
     new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Firestore network timeout. Please verify that your Firestore Database is created and enabled in the Firebase console.')), timeoutMs)
+      setTimeout(() => reject(new Error('Realtime Database connection timeout. Please verify that your Database is enabled in the Firebase console.')), timeoutMs)
     )
   ]) as Promise<any>;
 };
@@ -48,12 +48,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLoading(true);
       if (user) {
         try {
-          // Fetch user document from Firestore to verify role with 3s timeout
-          const userDocRef = doc(db, 'users', user.uid);
+          // Fetch user document from RTDB to verify role with 3s timeout
+          const userDocRef = ref(db, `users/${user.uid}`);
           const userDocSnap = await getDocWithTimeout(userDocRef);
 
           if (userDocSnap.exists()) {
-            const data = userDocSnap.data();
+            const data = userDocSnap.val();
             setUserRole(data.role || 'student');
             setUserStatus(data.status || 'active');
 
@@ -68,7 +68,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               alert(data.status === 'blocked' ? 'Your account has been suspended.' : 'Access denied. Administrator privileges required.');
             }
           } else {
-            // User exists in Auth but not in Firestore yet (e.g. initial oauth)
+            // User exists in Auth but not in RTDB yet
             setIsAdmin(false);
             setCurrentUser(null);
             await signOut(auth);
@@ -79,7 +79,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setIsAdmin(false);
           setCurrentUser(null);
           await signOut(auth);
-          alert(error.message || 'Connection failed. Please ensure Firestore is enabled in your Firebase console.');
+          alert(error.message || 'Connection failed. Please ensure your Realtime Database is enabled.');
         }
       } else {
         setCurrentUser(null);

@@ -12,7 +12,7 @@ import { WebView } from 'react-native-webview';
 import * as FileSystem from 'expo-file-system';
 import * as ScreenCapture from 'expo-screen-capture';
 import { httpsCallable } from 'firebase/functions';
-import { doc, getDoc } from 'firebase/firestore';
+import { ref, get, set } from 'firebase/database';
 import { useAuth } from '../context/AuthContext';
 import { functions, db } from '../services/firebase';
 import { SecureViewerService } from '../services/SecureViewerService';
@@ -57,10 +57,10 @@ export const Viewer: React.FC<{ route: any; navigation: any }> = ({ route, navig
           throw new Error('User session or Device ID is missing.');
         }
 
-        // Step A: Fetch student user name from Firestore profile
+        // Step A: Fetch student user name from RTDB profile
         setStatusText('Checking license details...');
-        const userSnap = await getDoc(doc(db, 'users', user.uid));
-        const userName = userSnap.exists() ? userSnap.data()?.name : user.email;
+        const userSnap = await get(ref(db, `users/${user.uid}`));
+        const userName = userSnap.exists() ? userSnap.val()?.name : user.email;
 
         // Step B: Call secure Cloud Function to request decryption key
         // Function verifies active purchase, device binding limits, and integrity
@@ -76,7 +76,7 @@ export const Viewer: React.FC<{ route: any; navigation: any }> = ({ route, navig
 
         // Step C: Read local encrypted file as Base64 string into memory (RAM)
         setStatusText('Reading encrypted cache...');
-        const localFilePath = `${FileSystem.documentDirectory}secured_pdfs/${pdfId}.enc`;
+        const localFilePath = `${(FileSystem as any).documentDirectory}secured_pdfs/${pdfId}.enc`;
         
         const fileInfo = await FileSystem.getInfoAsync(localFilePath);
         if (!fileInfo.exists) {
@@ -153,19 +153,18 @@ export const Viewer: React.FC<{ route: any; navigation: any }> = ({ route, navig
         setCurrentPage(message.page);
         setTotalPages(message.total);
 
-        // Sync reading progress to Firestore (merge: true)
+        // Sync reading progress to RTDB
         if (user) {
-          const progressId = `${user.uid}_${pdfId}`;
-          const progressRef = doc(db, 'readingProgress', progressId);
+          const progressRef = ref(db, `readingProgress/${user.uid}/${pdfId}`);
           // Set progress asynchronously without blocking UI
-          setDoc(progressRef, {
+          set(progressRef, {
             userId: user.uid,
             pdfId: pdfId,
             lastPage: message.page,
             totalPages: message.total,
-            updatedAt: new Date(), // Using local JS date for offline-friendly sync support
-          }, { merge: true }).catch(err => {
-            console.log('Failed to sync reading progress to Firestore:', err);
+            updatedAt: Date.now(),
+          }).catch(err => {
+            console.log('Failed to sync reading progress to RTDB:', err);
           });
         }
       }
@@ -178,12 +177,12 @@ export const Viewer: React.FC<{ route: any; navigation: any }> = ({ route, navig
   const handleBookmarkPage = async () => {
     if (!user || !currentPage) return;
     try {
-      const bookmarkId = `${user.uid}_${pdfId}_${currentPage}`;
-      await setDoc(doc(db, 'bookmarks', bookmarkId), {
+      const bookmarkId = `${pdfId}_${currentPage}`;
+      await set(ref(db, `bookmarks/${user.uid}/${bookmarkId}`), {
         userId: user.uid,
         pdfId: pdfId,
         pageNumber: currentPage,
-        createdAt: new Date(),
+        createdAt: Date.now(),
       });
       Alert.alert('Bookmark Saved', `Page ${currentPage} has been bookmarked.`);
     } catch (error: any) {

@@ -4,9 +4,9 @@ import {
   connectAuthEmulator 
 } from 'firebase/auth';
 import { 
-  getFirestore, 
-  connectFirestoreEmulator 
-} from 'firebase/firestore';
+  getDatabase, 
+  connectDatabaseEmulator 
+} from 'firebase/database';
 import { 
   getStorage, 
   connectStorageEmulator 
@@ -31,7 +31,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+export const db = getDatabase(app);
 export const storage = getStorage(app);
 export const functions = getFunctions(app);
 
@@ -50,7 +50,7 @@ if (__DEV__ && process.env.EXPO_PUBLIC_USE_EMULATORS === 'true') {
   console.log(`Connecting to Firebase Emulators at ${host}...`);
   try {
     connectAuthEmulator(auth, `http://${host}:9099`, { disableWarnings: true });
-    connectFirestoreEmulator(db, host, 8080);
+    connectDatabaseEmulator(db, host, 9000);
     connectStorageEmulator(storage, host, 9199);
     connectFunctionsEmulator(functions, host, 5001);
   } catch (error) {

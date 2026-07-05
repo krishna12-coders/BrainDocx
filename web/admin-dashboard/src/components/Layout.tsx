@@ -104,7 +104,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <ListItemIcon sx={{ color: active ? 'primary.contrastText' : 'text.secondary', minWidth: 40 }}>
                   {item.icon}
                 </ListItemIcon>
-                <ListItemText primary={item.text} primaryTypographyProps={{ fontWeight: active ? 'bold' : 'medium' }} />
+                <ListItemText primary={<Typography sx={{ fontWeight: active ? 700 : 500 }}>{item.text}</Typography>} />
               </ListItemButton>
             </ListItem>
           );

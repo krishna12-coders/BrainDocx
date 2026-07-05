@@ -24,7 +24,7 @@ import {
   IconButton,
 } from '@mui/material';
 import { Delete as DeleteIcon, Send as SendIcon } from '@mui/icons-material';
-import { collection, onSnapshot, doc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { ref, onValue, set, remove, push } from 'firebase/database';
 import { db } from '../utils/firebase';
 
 interface NotificationItem {
@@ -49,15 +49,17 @@ export const Notifications: React.FC = () => {
 
   useEffect(() => {
     // Listen to Notifications
-    const unsubNotifications = onSnapshot(collection(db, 'notifications'), (snap) => {
+    const unsubNotifications = onValue(ref(db, 'notifications'), (snap) => {
       const items: NotificationItem[] = [];
-      snap.forEach((doc) => {
-        items.push({ id: doc.id, ...doc.data() } as NotificationItem);
-      });
-      // Sort client-side by time
+      if (snap.exists()) {
+        snap.forEach((doc) => {
+          items.push({ id: doc.key, ...doc.val() } as NotificationItem);
+        });
+      }
+      // Sort client-side by time (handles both raw number and timestamp object structures)
       items.sort((a, b) => {
-        const timeA = a.sentAt ? a.sentAt.seconds : 0;
-        const timeB = b.sentAt ? b.sentAt.seconds : 0;
+        const timeA = typeof a.sentAt === 'number' ? a.sentAt : (a.sentAt?.seconds ? a.sentAt.seconds * 1000 : 0);
+        const timeB = typeof b.sentAt === 'number' ? b.sentAt : (b.sentAt?.seconds ? b.sentAt.seconds * 1000 : 0);
         return timeB - timeA; // newest first
       });
       setNotifications(items);
@@ -85,12 +87,14 @@ export const Notifications: React.FC = () => {
     }
 
     try {
-      const notifDocRef = doc(collection(db, 'notifications'));
-      await setDoc(notifDocRef, {
+      const notifRef = push(ref(db, 'notifications'));
+      const id = notifRef.key;
+      await set(notifRef, {
+        id,
         title: title.trim(),
         body: body.trim(),
         target: targetType === 'all' ? 'all' : targetUserId.trim(),
-        sentAt: serverTimestamp(),
+        sentAt: Date.now(),
       });
 
       setTitle('');
@@ -106,7 +110,7 @@ export const Notifications: React.FC = () => {
   const handleDeleteNotification = async (id: string) => {
     if (window.confirm('Delete this notification log entry? It will also disappear from users\' apps.')) {
       try {
-        await deleteDoc(doc(db, 'notifications', id));
+        await remove(ref(db, `notifications/${id}`));
         showMessage('Notification removed.');
       } catch (err: any) {
         showMessage(err.message, 'error');
@@ -126,7 +130,7 @@ export const Notifications: React.FC = () => {
     <Box>
       <Grid container spacing={3}>
         {/* Create Notification Form */}
-        <Grid item xs={12} md={5}>
+        <Grid size={{ xs: 12, md: 5 }}>
           <Card sx={{ borderRadius: 2, boxShadow: 1 }}>
             <CardContent>
               <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2 }}>
@@ -186,7 +190,7 @@ export const Notifications: React.FC = () => {
         </Grid>
 
         {/* History of Sent Notifications */}
-        <Grid item xs={12} md={7}>
+        <Grid size={{ xs: 12, md: 7 }}>
           <Card sx={{ borderRadius: 2, boxShadow: 1 }}>
             <CardContent>
               <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2 }}>

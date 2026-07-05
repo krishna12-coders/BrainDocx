@@ -24,7 +24,7 @@ import {
   CheckCircle as ActiveIcon,
   DeleteForever as UnbindIcon,
 } from '@mui/icons-material';
-import { collection, onSnapshot, doc, deleteDoc } from 'firebase/firestore';
+import { ref, onValue, remove } from 'firebase/database';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../utils/firebase';
 
@@ -56,24 +56,30 @@ export const Users: React.FC = () => {
 
   useEffect(() => {
     // Listen to Users
-    const unsubUsers = onSnapshot(collection(db, 'users'), (snap) => {
+    const unsubUsers = onValue(ref(db, 'users'), (snap) => {
       const items: UserProfile[] = [];
-      snap.forEach((doc) => {
-        const data = doc.data();
-        if (data.role !== 'admin') { // Admin panel controls students only
-          items.push({ id: doc.id, ...data } as UserProfile);
-        }
-      });
+      if (snap.exists()) {
+        snap.forEach((doc) => {
+          const data = doc.val();
+          if (data.role !== 'admin') {
+            items.push({ id: doc.key, ...data } as UserProfile);
+          }
+        });
+      }
       setUsers(items);
       setLoading(false);
     });
 
-    // Listen to Devices
-    const unsubDevices = onSnapshot(collection(db, 'devices'), (snap) => {
+    // Listen to Devices (Nested devices/{userId}/{deviceId})
+    const unsubDevices = onValue(ref(db, 'devices'), (snap) => {
       const items: Device[] = [];
-      snap.forEach((doc) => {
-        items.push({ id: doc.id, ...doc.data() } as Device);
-      });
+      if (snap.exists()) {
+        snap.forEach((userDevicesSnap) => {
+          userDevicesSnap.forEach((devSnap) => {
+            items.push({ id: devSnap.key, userId: userDevicesSnap.key, ...devSnap.val() } as Device);
+          });
+        });
+      }
       setDevices(items);
     });
 
@@ -107,15 +113,15 @@ export const Users: React.FC = () => {
     }
   };
 
-  // Unbind a device (delete device document in Firestore)
-  const handleUnbindDevice = async (deviceId: string) => {
+  // Unbind a device (delete device document in RTDB)
+  const handleUnbindDevice = async (userId: string, deviceId: string) => {
     if (!window.confirm('Are you sure you want to unbind this device? This will release one of the user\'s slots.')) {
       return;
     }
 
     setActionLoading(true);
     try {
-      await deleteDoc(doc(db, 'devices', deviceId));
+      await remove(ref(db, `devices/${userId}/${deviceId}`));
       showMessage('Device successfully unbound.');
     } catch (err: any) {
       console.error(err);
@@ -137,7 +143,7 @@ export const Users: React.FC = () => {
     <Box>
       <Grid container spacing={3}>
         {/* Students List */}
-        <Grid item xs={12} lg={7}>
+        <Grid size={{ xs: 12, lg: 7 }}>
           <Card sx={{ borderRadius: 2, boxShadow: 1 }}>
             <CardContent>
               <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2 }}>
@@ -210,7 +216,7 @@ export const Users: React.FC = () => {
         </Grid>
 
         {/* Bound Devices List */}
-        <Grid item xs={12} lg={5}>
+        <Grid size={{ xs: 12, lg: 5 }}>
           <Card sx={{ borderRadius: 2, boxShadow: 1 }}>
             <CardContent>
               <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2 }}>
@@ -253,7 +259,7 @@ export const Users: React.FC = () => {
                                 size="small"
                                 color="error"
                                 disabled={actionLoading}
-                                onClick={() => handleUnbindDevice(device.id)}
+                                onClick={() => handleUnbindDevice(device.userId, device.id)}
                               >
                                 <UnbindIcon fontSize="small" />
                               </IconButton>

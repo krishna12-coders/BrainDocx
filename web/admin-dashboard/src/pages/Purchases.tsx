@@ -27,7 +27,7 @@ import {
   Block as RevokeIcon,
   CheckCircle as ActivateIcon,
 } from '@mui/icons-material';
-import { collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { ref, onValue, set, remove, update } from 'firebase/database';
 import { db } from '../utils/firebase';
 
 interface Purchase {
@@ -61,22 +61,34 @@ export const Purchases: React.FC = () => {
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' });
 
   useEffect(() => {
-    // Listen to Purchases
-    const unsubPurchases = onSnapshot(collection(db, 'purchases'), (snap) => {
+    // Listen to Purchases (nested under purchases/{userId}/{pdfId})
+    const unsubPurchases = onValue(ref(db, 'purchases'), (snap) => {
       const items: Purchase[] = [];
-      snap.forEach((doc) => {
-        items.push({ id: doc.id, ...doc.data() } as Purchase);
-      });
+      if (snap.exists()) {
+        snap.forEach((userPurchasesSnap) => {
+          const userId = userPurchasesSnap.key;
+          userPurchasesSnap.forEach((purchaseDoc) => {
+            items.push({
+              id: `${userId}_${purchaseDoc.key}`,
+              userId,
+              pdfId: purchaseDoc.key,
+              ...purchaseDoc.val(),
+            } as Purchase);
+          });
+        });
+      }
       setPurchases(items);
       setLoading(false);
     });
 
     // Listen to Coupons
-    const unsubCoupons = onSnapshot(collection(db, 'coupons'), (snap) => {
+    const unsubCoupons = onValue(ref(db, 'coupons'), (snap) => {
       const items: Coupon[] = [];
-      snap.forEach((doc) => {
-        items.push({ id: doc.id, ...doc.data() } as Coupon);
-      });
+      if (snap.exists()) {
+        snap.forEach((doc) => {
+          items.push({ id: doc.key, ...doc.val() } as Coupon);
+        });
+      }
       setCoupons(items);
     });
 
@@ -98,7 +110,7 @@ export const Purchases: React.FC = () => {
     }
 
     try {
-      await updateDoc(doc(db, 'purchases', purchase.id), {
+      await update(ref(db, `purchases/${purchase.userId}/${purchase.pdfId}`), {
         status: nextStatus,
       });
       showMessage(`Purchase status set to ${nextStatus}.`);
@@ -118,12 +130,12 @@ export const Purchases: React.FC = () => {
     const codeUpper = couponCode.trim().toUpperCase();
 
     try {
-      await setDoc(doc(db, 'coupons', codeUpper), {
+      await set(ref(db, `coupons/${codeUpper}`), {
         code: codeUpper,
         discountPercent: Number(discountPercent),
         expiresAt: expiryDate,
         active: true,
-        createdAt: serverTimestamp(),
+        createdAt: Date.now(),
       });
       setCouponCode('');
       setDiscountPercent('');
@@ -137,7 +149,7 @@ export const Purchases: React.FC = () => {
   // Toggle Coupon Active Status
   const handleToggleCoupon = async (coupon: Coupon) => {
     try {
-      await updateDoc(doc(db, 'coupons', coupon.id), {
+      await update(ref(db, `coupons/${coupon.id}`), {
         active: !coupon.active,
       });
       showMessage('Coupon status updated.');
@@ -150,7 +162,7 @@ export const Purchases: React.FC = () => {
   const handleDeleteCoupon = async (id: string) => {
     if (window.confirm('Delete this coupon?')) {
       try {
-        await deleteDoc(doc(db, 'coupons', id));
+        await remove(ref(db, `coupons/${id}`));
         showMessage('Coupon deleted.');
       } catch (err: any) {
         showMessage(err.message, 'error');
@@ -241,7 +253,7 @@ export const Purchases: React.FC = () => {
       {activeTab === 1 && (
         <Grid container spacing={3}>
           {/* Coupon Form */}
-          <Grid item xs={12} md={4}>
+          <Grid size={{ xs: 12, md: 4 }}>
             <Card sx={{ borderRadius: 2, boxShadow: 1 }}>
               <CardContent>
                 <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2 }}>
@@ -266,7 +278,7 @@ export const Purchases: React.FC = () => {
                     label="Expiry Date"
                     type="date"
                     fullWidth
-                    InputLabelProps={{ shrink: true }}
+                    slotProps={{ inputLabel: { shrink: true } }}
                     value={expiryDate}
                     onChange={(e) => setExpiryDate(e.target.value)}
                   />
@@ -279,7 +291,7 @@ export const Purchases: React.FC = () => {
           </Grid>
 
           {/* Coupon List */}
-          <Grid item xs={12} md={8}>
+          <Grid size={{ xs: 12, md: 8 }}>
             <Card sx={{ borderRadius: 2, boxShadow: 1 }}>
               <CardContent>
                 <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2 }}>
@@ -318,10 +330,10 @@ export const Purchases: React.FC = () => {
                             </TableCell>
                             <TableCell align="right">
                               <IconButton onClick={() => handleToggleCoupon(coupon)} color={coupon.active ? 'warning' : 'success'}>
-                                {coupon.active ? <RevokeIcon size="small" /> : <ActivateIcon size="small" />}
+                                {coupon.active ? <RevokeIcon fontSize="small" /> : <ActivateIcon fontSize="small" />}
                               </IconButton>
                               <IconButton onClick={() => handleDeleteCoupon(coupon.id)} color="error">
-                                <DeleteIcon size="small" />
+                                <DeleteIcon fontSize="small" />
                               </IconButton>
                             </TableCell>
                           </TableRow>

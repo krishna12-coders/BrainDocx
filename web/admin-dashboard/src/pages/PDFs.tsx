@@ -30,7 +30,7 @@ import {
   Alert,
 } from '@mui/material';
 import { Delete as DeleteIcon, Add as AddIcon, CloudUpload as UploadIcon } from '@mui/icons-material';
-import { collection, onSnapshot, doc, setDoc, deleteDoc, addDoc, serverTimestamp } from 'firebase/firestore';
+import { ref as dbRef, onValue, set, remove, push } from 'firebase/database';
 import { ref, uploadBytes, deleteObject } from 'firebase/storage';
 import { db, storage } from '../utils/firebase';
 import { encryptFile } from '../utils/crypto';
@@ -84,23 +84,35 @@ export const PDFs: React.FC = () => {
 
   useEffect(() => {
     // Real-time updates for Categories
-    const unsubCats = onSnapshot(collection(db, 'categories'), (snap) => {
+    const unsubCats = onValue(dbRef(db, 'categories'), (snap) => {
       const items: Category[] = [];
-      snap.forEach((doc) => items.push({ id: doc.id, ...doc.data() } as Category));
+      if (snap.exists()) {
+        snap.forEach((doc) => {
+          items.push({ id: doc.key, ...doc.val() } as Category);
+        });
+      }
       setCategories(items);
     });
 
     // Real-time updates for Subjects
-    const unsubSubs = onSnapshot(collection(db, 'subjects'), (snap) => {
+    const unsubSubs = onValue(dbRef(db, 'subjects'), (snap) => {
       const items: Subject[] = [];
-      snap.forEach((doc) => items.push({ id: doc.id, ...doc.data() } as Subject));
+      if (snap.exists()) {
+        snap.forEach((doc) => {
+          items.push({ id: doc.key, ...doc.val() } as Subject);
+        });
+      }
       setSubjects(items);
     });
 
     // Real-time updates for PDFs
-    const unsubPdfs = onSnapshot(collection(db, 'pdfs'), (snap) => {
+    const unsubPdfs = onValue(dbRef(db, 'pdfs'), (snap) => {
       const items: PDFMetadata[] = [];
-      snap.forEach((doc) => items.push({ id: doc.id, ...doc.data() } as PDFMetadata));
+      if (snap.exists()) {
+        snap.forEach((doc) => {
+          items.push({ id: doc.key, ...doc.val() } as PDFMetadata);
+        });
+      }
       setPdfs(items);
     });
 
@@ -121,8 +133,9 @@ export const PDFs: React.FC = () => {
     if (!categoryName.trim()) return;
 
     try {
-      const docRef = doc(collection(db, 'categories'));
-      await setDoc(docRef, { name: categoryName, createdAt: serverTimestamp() });
+      const catRef = push(dbRef(db, 'categories'));
+      const id = catRef.key;
+      await set(catRef, { id, name: categoryName, createdAt: Date.now() });
       setCategoryName('');
       showMessage('Category created successfully.');
     } catch (err: any) {
@@ -136,11 +149,13 @@ export const PDFs: React.FC = () => {
     if (!subjectName.trim() || !subjectCategoryId) return;
 
     try {
-      const docRef = doc(collection(db, 'subjects'));
-      await setDoc(docRef, {
+      const subRef = push(dbRef(db, 'subjects'));
+      const id = subRef.key;
+      await set(subRef, {
+        id,
         name: subjectName,
         categoryId: subjectCategoryId,
-        createdAt: serverTimestamp(),
+        createdAt: Date.now(),
       });
       setSubjectName('');
       showMessage('Subject created successfully.');
@@ -153,7 +168,7 @@ export const PDFs: React.FC = () => {
   const handleDeleteCategory = async (id: string) => {
     if (window.confirm('Are you sure you want to delete this category? All associated subjects and PDFs will remain but category reference will be lost.')) {
       try {
-        await deleteDoc(doc(db, 'categories', id));
+        await remove(dbRef(db, `categories/${id}`));
         showMessage('Category deleted.');
       } catch (err: any) {
         showMessage(err.message, 'error');
@@ -164,7 +179,7 @@ export const PDFs: React.FC = () => {
   const handleDeleteSubject = async (id: string) => {
     if (window.confirm('Are you sure?')) {
       try {
-        await deleteDoc(doc(db, 'subjects', id));
+        await remove(dbRef(db, `subjects/${id}`));
         showMessage('Subject deleted.');
       } catch (err: any) {
         showMessage(err.message, 'error');
@@ -186,27 +201,26 @@ export const PDFs: React.FC = () => {
       const { encryptedBlob, keyBase64 } = await encryptFile(pdfFile);
 
       // Create a unique document ID
-      const pdfDocRef = doc(collection(db, 'pdfs'));
-      const pdfId = pdfDocRef.id;
+      const pdfRef = push(dbRef(db, 'pdfs'));
+      const pdfId = pdfRef.key || 'pdf_' + Math.random().toString(36).substring(2);
 
       // Step B: Upload encrypted file to Firebase Storage
       showMessage('Uploading encrypted file to Firebase Storage...');
-      const storageRef = ref(storage, `pdfs/${pdfId}`);
-      await uploadBytes(storageRef, encryptedBlob, {
+      const fileRef = ref(storage, `pdfs/${pdfId}`);
+      await uploadBytes(fileRef, encryptedBlob, {
         contentType: 'application/octet-stream', // Binary stream instead of pdf mime to obscure file type
       });
 
-      // Step C: Save decryption key to private Firestore collection
-      // Denied to all client reads by security rules, accessible only to Cloud Functions
+      // Step C: Save decryption key to private RTDB collection
       showMessage('Saving decryption key securely...');
-      await setDoc(doc(db, 'pdf_keys', pdfId), {
+      await set(dbRef(db, `pdf_keys/${pdfId}`), {
         key: keyBase64,
-        createdAt: serverTimestamp(),
+        createdAt: Date.now(),
       });
 
-      // Step D: Save metadata to public PDFs collection
+      // Step D: Save metadata to public PDFs node
       showMessage('Publishing PDF metadata...');
-      await setDoc(pdfDocRef, {
+      await set(pdfRef, {
         id: pdfId,
         title: pdfTitle,
         description: pdfDesc,
@@ -214,7 +228,7 @@ export const PDFs: React.FC = () => {
         subjectId: pdfSubject,
         encryptedStoragePath: `pdfs/${pdfId}`,
         sizeInBytes: pdfFile.size,
-        createdAt: serverTimestamp(),
+        createdAt: Date.now(),
       });
 
       // Reset PDF Form
@@ -242,9 +256,9 @@ export const PDFs: React.FC = () => {
         const fileRef = ref(storage, pdf.encryptedStoragePath);
         await deleteObject(fileRef).catch(e => console.log('Storage file did not exist or failed to delete:', e));
 
-        // Delete metadata & key from firestore
-        await deleteDoc(doc(db, 'pdfs', pdf.id));
-        await deleteDoc(doc(db, 'pdf_keys', pdf.id)).catch(e => console.log('Private key failed to delete:', e));
+        // Delete metadata & key from RTDB
+        await remove(dbRef(db, `pdfs/${pdf.id}`));
+        await remove(dbRef(db, `pdf_keys/${pdf.id}`)).catch(e => console.log('Private key failed to delete:', e));
 
         showMessage('PDF successfully removed.');
       } catch (err: any) {
@@ -324,7 +338,7 @@ export const PDFs: React.FC = () => {
       {activeTab === 1 && (
         <Grid container spacing={3}>
           {/* Categories card */}
-          <Grid item xs={12} md={6}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <Card sx={{ borderRadius: 2, boxShadow: 1 }}>
               <CardContent>
                 <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2 }}>
@@ -356,7 +370,7 @@ export const PDFs: React.FC = () => {
                           <TableCell>{cat.name}</TableCell>
                           <TableCell align="right">
                             <IconButton onClick={() => handleDeleteCategory(cat.id)} color="error" size="small">
-                              <DeleteIcon size="small" />
+                              <DeleteIcon fontSize="small" />
                             </IconButton>
                           </TableCell>
                         </TableRow>
@@ -369,7 +383,7 @@ export const PDFs: React.FC = () => {
           </Grid>
 
           {/* Subjects card */}
-          <Grid item xs={12} md={6}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <Card sx={{ borderRadius: 2, boxShadow: 1 }}>
               <CardContent>
                 <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2 }}>
@@ -421,7 +435,7 @@ export const PDFs: React.FC = () => {
                             <TableCell>{cat}</TableCell>
                             <TableCell align="right">
                               <IconButton onClick={() => handleDeleteSubject(sub.id)} color="error" size="small">
-                                <DeleteIcon size="small" />
+                                <DeleteIcon fontSize="small" />
                               </IconButton>
                             </TableCell>
                           </TableRow>

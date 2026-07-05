@@ -1,6 +1,6 @@
 import * as FileSystem from 'expo-file-system';
 
-const VIEWER_DIR = `${FileSystem.documentDirectory}secure-viewer/`;
+const VIEWER_DIR = `${(FileSystem as any).documentDirectory}secure-viewer/`;
 const PDF_JS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js';
 const WORKER_JS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 

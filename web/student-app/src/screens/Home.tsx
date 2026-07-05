@@ -10,8 +10,9 @@ import {
   Alert,
   SafeAreaView,
   ScrollView,
+  Platform,
 } from 'react-native';
-import { collection, onSnapshot, query, where, doc } from 'firebase/firestore';
+import { ref as dbRef, onValue } from 'firebase/database';
 import { ref, getDownloadURL } from 'firebase/storage';
 import { httpsCallable } from 'firebase/functions';
 import * as FileSystem from 'expo-file-system';
@@ -53,7 +54,7 @@ export const Home: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
-  // Firestore Sync State
+  // Database Sync State
   const [categories, setCategories] = useState<Category[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [pdfs, setPdfs] = useState<PDFMetadata[]>([]);
@@ -65,7 +66,7 @@ export const Home: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
   // Directory for secure storage
-  const SECURE_PDF_DIR = `${FileSystem.documentDirectory}secured_pdfs/`;
+  const SECURE_PDF_DIR = `${(FileSystem as any).documentDirectory}secured_pdfs/`;
 
   useEffect(() => {
     // 1. Prepare Secure PDF directories and cache viewer assets
@@ -87,36 +88,49 @@ export const Home: React.FC<{ navigation: any }> = ({ navigation }) => {
     };
     initStorage();
 
-    // 2. Setup Firestore Listeners
+    // 2. Setup Realtime Database Listeners
     if (!user) return;
 
-    const unsubCats = onSnapshot(collection(db, 'categories'), (snap) => {
+    const unsubCats = onValue(dbRef(db, 'categories'), (snap) => {
       const items: Category[] = [];
-      snap.forEach(doc => items.push({ id: doc.id, ...doc.data() } as Category));
+      if (snap.exists()) {
+        snap.forEach(doc => {
+          items.push({ id: doc.key, ...doc.val() } as Category);
+        });
+      }
       setCategories(items);
     });
 
-    const unsubSubs = onSnapshot(collection(db, 'subjects'), (snap) => {
+    const unsubSubs = onValue(dbRef(db, 'subjects'), (snap) => {
       const items: Subject[] = [];
-      snap.forEach(doc => items.push({ id: doc.id, ...doc.data() } as Subject));
+      if (snap.exists()) {
+        snap.forEach(doc => {
+          items.push({ id: doc.key, ...doc.val() } as Subject);
+        });
+      }
       setSubjects(items);
     });
 
-    const unsubPdfs = onSnapshot(collection(db, 'pdfs'), (snap) => {
+    const unsubPdfs = onValue(dbRef(db, 'pdfs'), (snap) => {
       const items: PDFMetadata[] = [];
-      snap.forEach(doc => items.push({ id: doc.id, ...doc.data() } as PDFMetadata));
+      if (snap.exists()) {
+        snap.forEach(doc => {
+          items.push({ id: doc.key, ...doc.val() } as PDFMetadata);
+        });
+      }
       setPdfs(items);
       setLoading(false);
     });
 
-    // Real-time purchase sync
-    const purchasesQuery = query(collection(db, 'purchases'), where('userId', '==', user.uid));
-    const unsubPurchases = onSnapshot(purchasesQuery, (snap) => {
+    // Real-time purchase sync (nested under purchases/{userId}/{pdfId})
+    const unsubPurchases = onValue(dbRef(db, `purchases/${user.uid}`), (snap) => {
       const items: Purchase[] = [];
-      snap.forEach(doc => {
-        const data = doc.data();
-        items.push({ id: doc.id, pdfId: data.pdfId, status: data.status } as Purchase);
-      });
+      if (snap.exists()) {
+        snap.forEach(doc => {
+          const data = doc.val();
+          items.push({ id: `${user.uid}_${doc.key}`, pdfId: doc.key, status: data.status } as Purchase);
+        });
+      }
       setPurchases(items);
       
       // Perform local cache pruning: if a purchase is revoked or deleted, remove the local encrypted file!

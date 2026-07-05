@@ -9,7 +9,7 @@ import {
   TouchableOpacity,
   Platform,
 } from 'react-native';
-import { collection, onSnapshot, query, where, orderBy } from 'firebase/firestore';
+import { ref, onValue } from 'firebase/database';
 import { db } from '../services/firebase';
 import { useAuth } from '../context/AuthContext';
 
@@ -28,28 +28,27 @@ export const Notifications: React.FC<{ navigation: any }> = ({ navigation }) => 
   useEffect(() => {
     if (!user) return;
 
-    // Retrieve notifications that are public ('all') or targeted specifically to this student
-    const notifQuery = query(
-      collection(db, 'notifications'),
-      where('target', 'in', ['all', user.uid])
-    );
-
-    const unsubscribe = onSnapshot(notifQuery, (snap) => {
+    // Retrieve notifications and filter them client-side
+    const unsubscribe = onValue(ref(db, 'notifications'), (snap) => {
       const items: Announcement[] = [];
-      snap.forEach((doc) => {
-        const data = doc.data();
-        items.push({
-          id: doc.id,
-          title: data.title,
-          body: data.body,
-          sentAt: data.sentAt,
-        } as Announcement);
-      });
+      if (snap.exists()) {
+        snap.forEach((doc) => {
+          const data = doc.val();
+          if (data.target === 'all' || data.target === user.uid) {
+            items.push({
+              id: doc.key,
+              title: data.title,
+              body: data.body,
+              sentAt: data.sentAt,
+            } as Announcement);
+          }
+        });
+      }
 
-      // Sort client-side because composite indexes may not be created in dev emulators
+      // Sort client-side by time (handles both raw number and timestamp object structures)
       items.sort((a, b) => {
-        const timeA = a.sentAt ? a.sentAt.seconds : 0;
-        const timeB = b.sentAt ? b.sentAt.seconds : 0;
+        const timeA = typeof a.sentAt === 'number' ? a.sentAt : (a.sentAt?.seconds ? a.sentAt.seconds * 1000 : 0);
+        const timeB = typeof b.sentAt === 'number' ? b.sentAt : (b.sentAt?.seconds ? b.sentAt.seconds * 1000 : 0);
         return timeB - timeA; // newest first
       });
 
@@ -62,7 +61,7 @@ export const Notifications: React.FC<{ navigation: any }> = ({ navigation }) => 
 
   const renderItem = ({ item }: { item: Announcement }) => {
     const dateStr = item.sentAt
-      ? new Date(item.sentAt.seconds * 1000).toLocaleString()
+      ? new Date(typeof item.sentAt === 'number' ? item.sentAt : item.sentAt.seconds * 1000).toLocaleString()
       : 'Just now';
 
     return (

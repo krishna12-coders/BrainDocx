@@ -10,7 +10,7 @@ import {
   SafeAreaView,
   Platform,
 } from 'react-native';
-import { collection, onSnapshot, query, where, doc, deleteDoc } from 'firebase/firestore';
+import { ref, onValue, remove } from 'firebase/database';
 import { db } from '../services/firebase';
 import { useAuth } from '../context/AuthContext';
 
@@ -46,33 +46,37 @@ export const Bookmarks: React.FC<{ navigation: any }> = ({ navigation }) => {
     if (!user) return;
 
     // 1. Listen to PDFs (to resolve titles)
-    const unsubPdfs = onSnapshot(collection(db, 'pdfs'), (snap) => {
+    const unsubPdfs = onValue(ref(db, 'pdfs'), (snap) => {
       const items: PDFMetadata[] = [];
-      snap.forEach(doc => {
-        items.push({ id: doc.id, title: doc.data().title } as PDFMetadata);
-      });
+      if (snap.exists()) {
+        snap.forEach(doc => {
+          items.push({ id: doc.key, title: doc.val().title } as PDFMetadata);
+        });
+      }
       setPdfs(items);
     });
 
-    // 2. Listen to Bookmarks
-    const bookmarksQuery = query(collection(db, 'bookmarks'), where('userId', '==', user.uid));
-    const unsubBookmarks = onSnapshot(bookmarksQuery, (snap) => {
+    // 2. Listen to Bookmarks (nested: bookmarks/{userId}/{bookmarkId})
+    const unsubBookmarks = onValue(ref(db, `bookmarks/${user.uid}`), (snap) => {
       const items: Bookmark[] = [];
-      snap.forEach(doc => {
-        const data = doc.data();
-        items.push({ id: doc.id, pdfId: data.pdfId, pageNumber: data.pageNumber, createdAt: data.createdAt } as Bookmark);
-      });
+      if (snap.exists()) {
+        snap.forEach(doc => {
+          const data = doc.val();
+          items.push({ id: doc.key, pdfId: data.pdfId, pageNumber: data.pageNumber, createdAt: data.createdAt } as Bookmark);
+        });
+      }
       setBookmarks(items);
     });
 
-    // 3. Listen to Reading Progress
-    const progressQuery = query(collection(db, 'readingProgress'), where('userId', '==', user.uid));
-    const unsubProgress = onSnapshot(progressQuery, (snap) => {
+    // 3. Listen to Reading Progress (nested: readingProgress/{userId}/{pdfId})
+    const unsubProgress = onValue(ref(db, `readingProgress/${user.uid}`), (snap) => {
       const items: ReadingProgress[] = [];
-      snap.forEach(doc => {
-        const data = doc.data();
-        items.push({ id: doc.id, pdfId: data.pdfId, lastPage: data.lastPage, totalPages: data.totalPages, updatedAt: data.updatedAt } as ReadingProgress);
-      });
+      if (snap.exists()) {
+        snap.forEach(doc => {
+          const data = doc.val();
+          items.push({ id: doc.key, pdfId: data.pdfId, lastPage: data.lastPage, totalPages: data.totalPages, updatedAt: data.updatedAt } as ReadingProgress);
+        });
+      }
       setProgresses(items);
       setLoading(false);
     });
@@ -85,8 +89,9 @@ export const Bookmarks: React.FC<{ navigation: any }> = ({ navigation }) => {
   }, [user]);
 
   const handleDeleteBookmark = async (bookmarkId: string) => {
+    if (!user) return;
     try {
-      await deleteDoc(doc(db, 'bookmarks', bookmarkId));
+      await remove(ref(db, `bookmarks/${user.uid}/${bookmarkId}`));
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Failed to remove bookmark.');
     }
@@ -134,7 +139,7 @@ export const Bookmarks: React.FC<{ navigation: any }> = ({ navigation }) => {
             Progress: {percentage}% ({item.lastPage} of {item.totalPages} pages)
           </Text>
           <View style={styles.progressBg}>
-            <View style={[styles.progressFill, { width: `${percentage}%` }]} />
+            <View style={[styles.progressFill, { width: `${percentage}%` as any }]} />
           </View>
         </View>
         <TouchableOpacity
