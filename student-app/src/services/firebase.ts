@@ -44,8 +44,8 @@ const getEmulatorHost = () => {
   return 'localhost';
 };
 
-// Check if running in development mode
-if (__DEV__) {
+// Connect to Firebase Emulators ONLY if explicitly requested in environment variables
+if (__DEV__ && process.env.EXPO_PUBLIC_USE_EMULATORS === 'true') {
   const host = getEmulatorHost();
   console.log(`Connecting to Firebase Emulators at ${host}...`);
   try {
