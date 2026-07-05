@@ -8,6 +8,15 @@ import * as SecureStore from 'expo-secure-store';
 import * as Device from 'expo-device';
 import { auth, db, functions } from '../services/firebase';
 
+const getDocWithTimeout = (docRef: any, timeoutMs: number = 3000) => {
+  return Promise.race([
+    getDoc(docRef),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Firestore connection timeout. Please verify that Firestore Database is enabled in your Firebase console.')), timeoutMs)
+    )
+  ]) as Promise<any>;
+};
+
 interface AuthContextType {
   user: User | null;
   deviceId: string | null;
@@ -184,7 +193,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         
         // Fetch student user profile status (check if blocked)
         try {
-          const userSnap = await getDoc(doc(db, 'users', currentUser.uid));
+          const userSnap = await getDocWithTimeout(doc(db, 'users', currentUser.uid));
           if (userSnap.exists() && userSnap.data()?.status === 'blocked') {
             Alert.alert('Suspended', 'Your account has been suspended by the administrator.');
             await signOut(auth);
@@ -192,9 +201,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           } else {
             setUser(currentUser);
           }
-        } catch (e) {
+        } catch (e: any) {
           console.error('Error checking user status:', e);
-          setUser(currentUser);
+          Alert.alert('Database Connection Failed', e.message || 'Please check your internet connection or verify Firestore Database is enabled.');
+          await signOut(auth);
+          setUser(null);
         }
       } else {
         setUser(null);

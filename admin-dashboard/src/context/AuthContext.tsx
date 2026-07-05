@@ -4,6 +4,15 @@ import type { User } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../utils/firebase';
 
+const getDocWithTimeout = (docRef: any, timeoutMs: number = 3000) => {
+  return Promise.race([
+    getDoc(docRef),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Firestore network timeout. Please verify that your Firestore Database is created and enabled in the Firebase console.')), timeoutMs)
+    )
+  ]) as Promise<any>;
+};
+
 interface AuthContextType {
   currentUser: User | null;
   isAdmin: boolean;
@@ -39,9 +48,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLoading(true);
       if (user) {
         try {
-          // Fetch user document from Firestore to verify role
+          // Fetch user document from Firestore to verify role with 3s timeout
           const userDocRef = doc(db, 'users', user.uid);
-          const userDocSnap = await getDoc(userDocRef);
+          const userDocSnap = await getDocWithTimeout(userDocRef);
 
           if (userDocSnap.exists()) {
             const data = userDocSnap.data();
@@ -60,17 +69,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
           } else {
             // User exists in Auth but not in Firestore yet (e.g. initial oauth)
-            // Let's create an default student user or deny access
             setIsAdmin(false);
             setCurrentUser(null);
             await signOut(auth);
             alert('Access denied. Administrator account not found.');
           }
-        } catch (error) {
+        } catch (error: any) {
           console.error('Error fetching user profile:', error);
           setIsAdmin(false);
           setCurrentUser(null);
           await signOut(auth);
+          alert(error.message || 'Connection failed. Please ensure Firestore is enabled in your Firebase console.');
         }
       } else {
         setCurrentUser(null);
