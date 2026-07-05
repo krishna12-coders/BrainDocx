@@ -1,0 +1,42 @@
+# Git Ignore Patterns for BrainDocx Project
+
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Expo and React Native
+.expo/
+**/android/build/
+**/ios/build/
+*.jks
+*.keystore
+
+# Build Outputs
+dist/
+**/dist/
+lib/
+**/lib/
+
+# Local Dev/Environment configs
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs and system files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+.DS_Store
+Thumbs.db
+
+# IDE Configurations
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
