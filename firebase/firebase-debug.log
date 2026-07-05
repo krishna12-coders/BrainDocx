@@ -1,0 +1,34 @@
+[debug] [2026-07-05T17:34:48.496Z] ----------------------------------------------------------------------
+[debug] [2026-07-05T17:34:48.498Z] Command:       C:\Program Files\nodejs\node.exe C:\Users\Parth Pawar\AppData\Roaming\npm\node_modules\firebase-tools\lib\bin\firebase.js emulators:start
+[debug] [2026-07-05T17:34:48.498Z] CLI Version:   15.15.0
+[debug] [2026-07-05T17:34:48.498Z] Platform:      win32
+[debug] [2026-07-05T17:34:48.498Z] Node Version:  v24.11.0
+[debug] [2026-07-05T17:34:48.498Z] Time:          Sun Jul 05 2026 23:04:48 GMT+0530 (India Standard Time)
+[debug] [2026-07-05T17:34:48.498Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-07-05T17:34:48.500Z] >>> [apiv2][query] GET https://firebase-public.firebaseio.com/cli.json [none]
+[debug] [2026-07-05T17:34:50.264Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-07-05T17:34:50.264Z] > authorizing via signed-in user (goodwilllabware123@gmail.com)
+[debug] [2026-07-05T17:34:50.501Z] openjdk version "17.0.18" 2026-01-20
+OpenJDK Runtime Environment Temurin-17.0.18+8 (build 17.0.18+8)
+
+[debug] [2026-07-05T17:34:50.502Z] OpenJDK 64-Bit Server VM Temurin-17.0.18+8 (build 17.0.18+8, mixed mode, sharing)
+
+[debug] [2026-07-05T17:34:50.535Z] Parsed Java major version: 17
+[debug] [2026-07-05T17:34:50.539Z] Could not find VSCode notification endpoint: FetchError: request to http://localhost:40001/vscode/notify failed, reason: . If you are not running the Firebase SQL Connect VSCode extension, this is expected and not an issue.
+[info] i  emulators: Shutting down emulators. {"metadata":{"emulator":{"name":"hub"},"message":"Shutting down emulators."}}
+[debug] [2026-07-05T17:34:50.541Z] Could not find VSCode notification endpoint: FetchError: request to http://localhost:40001/vscode/notify failed, reason: . If you are not running the Firebase SQL Connect VSCode extension, this is expected and not an issue.
+[debug] [2026-07-05T17:34:50.921Z] <<< [apiv2][status] GET https://firebase-public.firebaseio.com/cli.json 200
+[debug] [2026-07-05T17:34:50.922Z] <<< [apiv2][body] GET https://firebase-public.firebaseio.com/cli.json {"cloudBuildErrorAfter":1594252800000,"cloudBuildWarnAfter":1590019200000,"defaultNode10After":1594252800000,"minVersion":"3.0.5","node8DeploysDisabledAfter":1613390400000,"node8RuntimeDisabledAfter":1615809600000,"node8WarnAfter":1600128000000}
+[error] 
+[error] Error: firebase-tools no longer supports Java version before 21. Please install a JDK at version 21 or above to get a compatible runtime.
+[debug] [2026-07-05T17:34:51.191Z] Error: EBUSY: resource busy or locked, unlink 'C:\PROJECTS\BrainDocx\firebase\firebase-debug.log'
+    at Object.unlinkSync (node:fs:1942:11)
+    at process.<anonymous> (C:\Users\Parth Pawar\AppData\Roaming\npm\node_modules\firebase-tools\lib\bin\cli.js:44:16)
+    at process.emit (node:events:520:35)
+    at process.exit (node:internal/process/per_thread:236:15)
+    at Timeout._onTimeout (C:\Users\Parth Pawar\AppData\Roaming\npm\node_modules\firebase-tools\lib\errorOut.js:20:17)
+    at listOnTimeout (node:internal/timers:608:17)
+    at process.processTimers (node:internal/timers:543:7)
+[error] 
+[error] Error: An unexpected error has occurred.
