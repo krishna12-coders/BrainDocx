@@ -1261,3 +1261,153 @@ button { cursor: pointer; border: none; font-family: inherit; }
   color: var(--text-muted);
 }
 
+/* ══════════════════════════════════════════
+   MOBILE & RESPONSIVE APP SHELL STYLES
+   ══════════════════════════════════════════ */
+.mobile-header {
+  display: none;
+}
+.bottom-nav {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  /* Hide sidebar by default on mobile */
+  .sidebar {
+    display: none !important;
+  }
+  
+  /* Sidebar overlay when open */
+  .sidebar.open {
+    display: flex !important;
+    position: fixed;
+    top: 56px;
+    left: 0;
+    bottom: 0;
+    width: 240px;
+    z-index: 100;
+    box-shadow: var(--shadow-lg);
+    background: var(--bg-secondary);
+    animation: slideInLeft 0.25s ease;
+  }
+  
+  @keyframes slideInLeft {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(0); }
+  }
+
+  /* Show mobile top header */
+  .mobile-header {
+    display: flex;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 56px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    z-index: 99;
+  }
+  
+  /* Show bottom navigation bar */
+  .bottom-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 60px;
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border);
+    justify-content: space-around;
+    align-items: center;
+    padding: 4px 0;
+    z-index: 99;
+  }
+
+  /* Bottom nav items */
+  .bottom-nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    gap: 4px;
+    color: var(--text-secondary);
+    flex: 1;
+    height: 100%;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  
+  .bottom-nav-item.active {
+    color: var(--accent);
+  }
+  
+  .bottom-nav-icon {
+    font-size: 20px;
+  }
+  
+  .bottom-nav-label {
+    font-size: 10px;
+    font-weight: 600;
+  }
+
+  /* Main content spacing adjustments */
+  .main-content {
+    padding: 16px !important;
+    margin-top: 56px;
+    margin-bottom: 60px; /* Space for bottom nav */
+    height: calc(100vh - 116px) !important;
+    overflow-y: auto;
+  }
+  
+  /* Layout modifications */
+  .cols-2 {
+    grid-template-columns: 1fr !important;
+  }
+
+  .page-header {
+    flex-direction: column;
+    align-items: stretch !important;
+    gap: 16px;
+  }
+
+  .tabs {
+    width: 100%;
+    display: flex;
+  }
+  .tab {
+    flex: 1;
+    text-align: center;
+  }
+
+  /* Buttons & inputs on mobile */
+  .hamburger-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    font-size: 22px;
+    padding: 4px 8px;
+    cursor: pointer;
+  }
+
+  .mobile-logout-btn {
+    background: transparent;
+    border: none;
+    color: var(--danger);
+    font-size: 20px;
+    padding: 8px;
+    cursor: pointer;
+  }
+
+  .btn {
+    padding: 12px 18px;
+  }
+}
+
+
