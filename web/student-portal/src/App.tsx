@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from './AuthContext';
 
 // Student pages
 import { LoginPage } from './pages/LoginPage';
+import { LandingPage } from './pages/LandingPage';
 import { LibraryPage } from './pages/LibraryPage';
 import { ProgressPage } from './pages/ProgressPage';
 import { NotificationsPage } from './pages/NotificationsPage';
@@ -41,7 +42,6 @@ const StudentShell: React.FC = () => {
   const { user, userRole, logout } = useAuth();
   const [page, setPage] = useState<StudentPage>('library');
   const [viewer, setViewer] = useState<{ pdf: any; startPage?: number } | null>(null);
-  const navigate = useNavigate();
 
   // If logged in as admin, redirect to admin area
   if (userRole === 'admin') return <Navigate to="/admin/dashboard" replace />;
@@ -196,7 +196,11 @@ const AppRouter: React.FC = () => {
     <Routes>
       {/* ── Student Routes ── */}
       <Route path="/"
-        element={user && userRole === 'student' ? <StudentShell /> : user && userRole === 'admin' ? <Navigate to="/admin/dashboard" replace /> : <LoginPage />}
+        element={user && userRole === 'student' ? <StudentShell /> : user && userRole === 'admin' ? <Navigate to="/admin/dashboard" replace /> : <LandingPage />}
+      />
+
+      <Route path="/login"
+        element={user && userRole === 'student' ? <Navigate to="/" replace /> : user && userRole === 'admin' ? <Navigate to="/admin/dashboard" replace /> : <LoginPage />}
       />
 
       {/* ── Admin Login ── */}
