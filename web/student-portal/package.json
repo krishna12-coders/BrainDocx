@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:apk": "npm run build && npx cap sync && cd android && gradlew.bat assembleDebug",
     "lint": "oxlint",
     "preview": "vite preview"
   },
