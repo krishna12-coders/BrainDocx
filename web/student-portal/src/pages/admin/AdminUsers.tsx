@@ -42,6 +42,17 @@ export const AdminUsers: React.FC = () => {
     finally { setActionId(null); }
   };
 
+  const deleteStudent = async (user: UserProfile) => {
+    if (!confirm(`⚠️ PERMANENT DELETION WARNING ⚠️\n\nAre you sure you want to permanently delete student "${user.name || user.email}"?\n\nThis will permanently delete their credentials, credentials PIN, linked devices, and active purchases from the system. This cannot be undone.`)) return;
+    setActionId(user.id);
+    try {
+      const fn = httpsCallable(functions, 'deleteUser');
+      await fn({ targetUserId: user.id });
+      showToast('🗑️ Student deleted successfully');
+    } catch (e: any) { showToast('❌ ' + e.message); }
+    finally { setActionId(null); }
+  };
+
   const unbindDevice = async (userId: string, deviceId: string) => {
     if (!confirm('Unbind this device from the student account?')) return;
     setActionId(deviceId);
@@ -126,13 +137,22 @@ export const AdminUsers: React.FC = () => {
                         <td style={tdStyle} style={{ ...tdStyle, fontSize: '11px', color: 'var(--text-muted)' }}>{u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—'}</td>
                         <td style={tdStyle}>
                           {u.role !== 'admin' && (
-                            <button
-                              onClick={() => toggleStatus(u)}
-                              disabled={actionId === u.id}
-                              style={{ padding: '5px 12px', fontSize: '12px', fontWeight: 600, borderRadius: '6px', border: 'none', cursor: 'pointer', fontFamily: 'inherit', background: u.status === 'active' ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.15)', color: u.status === 'active' ? 'var(--danger)' : 'var(--success)' }}
-                            >
-                              {actionId === u.id ? '...' : u.status === 'active' ? '🚫 Block' : '✅ Unblock'}
-                            </button>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <button
+                                onClick={() => toggleStatus(u)}
+                                disabled={actionId === u.id}
+                                style={{ padding: '5px 12px', fontSize: '12px', fontWeight: 600, borderRadius: '6px', border: 'none', cursor: 'pointer', fontFamily: 'inherit', background: u.status === 'active' ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.15)', color: u.status === 'active' ? 'var(--danger)' : 'var(--success)' }}
+                              >
+                                {actionId === u.id ? '...' : u.status === 'active' ? '🚫 Block' : '✅ Unblock'}
+                              </button>
+                              <button
+                                onClick={() => deleteStudent(u)}
+                                disabled={actionId === u.id}
+                                style={{ padding: '5px 12px', fontSize: '12px', fontWeight: 600, borderRadius: '6px', border: '1px solid rgba(239,68,68,0.3)', cursor: 'pointer', fontFamily: 'inherit', background: 'transparent', color: 'var(--danger)' }}
+                              >
+                                {actionId === u.id ? '...' : '🗑️ Delete'}
+                              </button>
+                            </div>
                           )}
                         </td>
                       </tr>

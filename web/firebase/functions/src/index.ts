@@ -477,3 +477,64 @@ export const verifyPin = functions.https.onCall(async (data, context) => {
   };
 });
 
+// 8. Delete User (Admin only, deletes from Auth and RTDB)
+export const deleteUser = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError(
+      'unauthenticated',
+      'The function must be called while authenticated.'
+    );
+  }
+
+  // Ensure caller is admin
+  const callerSnap = await db.ref(`users/${context.auth.uid}`).once('value');
+  if (!callerSnap.exists() || callerSnap.val()?.role !== 'admin') {
+    throw new functions.https.HttpsError(
+      'permission-denied',
+      'Only administrators can perform this action.'
+    );
+  }
+
+  const { targetUserId } = data;
+  if (!targetUserId) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'Missing target user ID.'
+    );
+  }
+
+  // Prevent deleting oneself
+  if (targetUserId === context.auth.uid) {
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      'You cannot delete your own administrator account.'
+    );
+  }
+
+  try {
+    // 1. Delete from Firebase Authentication
+    await admin.auth().deleteUser(targetUserId);
+  } catch (authError: any) {
+    console.warn(`Auth deletion failed or user already deleted: ${authError.message}`);
+  }
+
+  // 2. Clean up database nodes
+  const updates: any = {};
+  updates[`users/${targetUserId}`] = null;
+  updates[`devices/${targetUserId}`] = null;
+  updates[`purchases/${targetUserId}`] = null;
+  updates[`bookmarks/${targetUserId}`] = null;
+  updates[`readingProgress/${targetUserId}`] = null;
+
+  // If there's an active PIN lookup, clean it up too
+  const userSnap = await db.ref(`users/${targetUserId}`).once('value');
+  if (userSnap.exists() && userSnap.val()?.appPinHash) {
+    updates[`pin_lookups/${userSnap.val().appPinHash}`] = null;
+  }
+
+  await db.ref().update(updates);
+
+  return { success: true, message: 'User and all associated records deleted successfully.' };
+});
+
+
