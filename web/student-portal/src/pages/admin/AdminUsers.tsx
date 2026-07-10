@@ -36,7 +36,7 @@ export const AdminUsers: React.FC = () => {
     setActionId(user.id);
     try {
       const fn = httpsCallable(functions, 'setUserStatus');
-      await fn({ userId: user.id, status: user.status === 'active' ? 'blocked' : 'active' });
+      await fn({ targetUserId: user.id, status: user.status === 'active' ? 'blocked' : 'active' });
       showToast(user.status === 'active' ? '🚫 User blocked' : '✅ User reactivated');
     } catch (e: any) { showToast('❌ ' + e.message); }
     finally { setActionId(null); }
