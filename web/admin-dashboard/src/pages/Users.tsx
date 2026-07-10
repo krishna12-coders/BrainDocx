@@ -23,6 +23,7 @@ import {
   Block as BlockIcon,
   CheckCircle as ActiveIcon,
   DeleteForever as UnbindIcon,
+  Delete as DeleteIcon,
 } from '@mui/icons-material';
 import { ref, onValue, remove } from 'firebase/database';
 import { httpsCallable } from 'firebase/functions';
@@ -113,6 +114,25 @@ export const Users: React.FC = () => {
     }
   };
 
+  // Delete user from Auth and DB via Cloud Function
+  const handleDeleteUser = async (userId: string) => {
+    if (!window.confirm('⚠️ PERMANENT DELETION WARNING ⚠️\n\nAre you sure you want to permanently delete this student? This will remove their credentials, PIN, devices, and purchases. This cannot be undone.')) {
+      return;
+    }
+
+    setActionLoading(true);
+    try {
+      const deleteUserFn = httpsCallable(functions, 'deleteUser');
+      await deleteUserFn({ targetUserId: userId });
+      showMessage('Student deleted successfully.');
+    } catch (err: any) {
+      console.error(err);
+      showMessage(err.message || 'Failed to delete student.', 'error');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // Unbind a device (delete device document in RTDB)
   const handleUnbindDevice = async (userId: string, deviceId: string) => {
     if (!window.confirm('Are you sure you want to unbind this device? This will release one of the user\'s slots.')) {
@@ -193,16 +213,28 @@ export const Users: React.FC = () => {
                               </Typography>
                             </TableCell>
                             <TableCell align="right">
-                              <Button
-                                size="small"
-                                variant="outlined"
-                                color={user.status === 'active' ? 'error' : 'success'}
-                                startIcon={user.status === 'active' ? <BlockIcon /> : <ActiveIcon />}
-                                disabled={actionLoading}
-                                onClick={() => handleToggleUserStatus(user.id, user.status)}
-                              >
-                                {user.status === 'active' ? 'Block' : 'Unblock'}
-                              </Button>
+                              <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+                                <Button
+                                  size="small"
+                                  variant="outlined"
+                                  color={user.status === 'active' ? 'error' : 'success'}
+                                  startIcon={user.status === 'active' ? <BlockIcon /> : <ActiveIcon />}
+                                  disabled={actionLoading}
+                                  onClick={() => handleToggleUserStatus(user.id, user.status)}
+                                >
+                                  {user.status === 'active' ? 'Block' : 'Unblock'}
+                                </Button>
+                                <Button
+                                  size="small"
+                                  variant="outlined"
+                                  color="error"
+                                  startIcon={<DeleteIcon />}
+                                  disabled={actionLoading}
+                                  onClick={() => handleDeleteUser(user.id)}
+                                >
+                                  Delete
+                                </Button>
+                              </Box>
                             </TableCell>
                           </TableRow>
                         );
