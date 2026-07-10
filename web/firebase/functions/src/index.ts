@@ -1,5 +1,6 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
+import * as crypto from 'crypto';
 
 admin.initializeApp();
 const db = admin.database();
@@ -246,3 +247,233 @@ export const setUserStatus = functions.https.onCall(async (data, context) => {
 
   return { success: true, message: `User status set to ${status}.` };
 });
+
+// 5. Generate PIN (uniquely generated 6-digit PIN, stored as SHA-256 hash)
+export const generatePin = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError(
+      'unauthenticated',
+      'The function must be called while authenticated.'
+    );
+  }
+
+  const uid = context.auth.uid;
+
+  // Fetch current user details to check if there is an existing pin hash to invalidate
+  const userRef = db.ref(`users/${uid}`);
+  const userSnap = await userRef.once('value');
+  const userData = userSnap.val();
+
+  if (userData && userData.appPinHash) {
+    // Invalidate previous pin immediately
+    await db.ref(`pin_lookups/${userData.appPinHash}`).remove();
+  }
+
+  // Generate a unique 6-digit PIN
+  let pin = '';
+  let pinHash = '';
+  let unique = false;
+  let attempts = 0;
+
+  while (!unique && attempts < 15) {
+    pin = Math.floor(100000 + Math.random() * 900000).toString();
+    pinHash = crypto.createHash('sha256').update(pin).digest('hex');
+
+    const lookupSnap = await db.ref(`pin_lookups/${pinHash}`).once('value');
+    if (!lookupSnap.exists()) {
+      unique = true;
+    }
+    attempts++;
+  }
+
+  if (!unique) {
+    throw new functions.https.HttpsError(
+      'internal',
+      'Unable to generate a unique PIN. Please try again.'
+    );
+  }
+
+  // Save new lookup
+  await db.ref(`pin_lookups/${pinHash}`).set({
+    uid,
+    createdAt: admin.database.ServerValue.TIMESTAMP,
+  });
+
+  // Save hash & metadata in user node
+  await userRef.update({
+    appPinHash: pinHash,
+    pinCreatedAt: admin.database.ServerValue.TIMESTAMP,
+    pinStatus: 'active',
+  });
+
+  return { pin };
+});
+
+// 6. Revoke PIN
+export const revokePin = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError(
+      'unauthenticated',
+      'The function must be called while authenticated.'
+    );
+  }
+
+  const uid = context.auth.uid;
+  const userRef = db.ref(`users/${uid}`);
+  const userSnap = await userRef.once('value');
+  const userData = userSnap.val();
+
+  if (userData && userData.appPinHash) {
+    await db.ref(`pin_lookups/${userData.appPinHash}`).remove();
+  }
+
+  await userRef.update({
+    appPinHash: null,
+    pinStatus: 'revoked',
+  });
+
+  return { success: true };
+});
+
+// 7. Verify PIN (sign-in from Mobile App, returns Firebase Custom Auth Token)
+export const verifyPin = functions.https.onCall(async (data, context) => {
+  const { pin, deviceId, deviceModel, osVersion } = data;
+
+  if (!pin || !deviceId) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'Missing PIN or Device ID.'
+    );
+  }
+
+  // 1. Rate Limiting & Lockout Check
+  const failureRef = db.ref(`pin_failures/${deviceId}`);
+  const failureSnap = await failureRef.once('value');
+  const failureData = failureSnap.val();
+
+  if (failureData) {
+    const now = Date.now();
+    if (failureData.lockedUntil && failureData.lockedUntil > now) {
+      const remainingMin = Math.ceil((failureData.lockedUntil - now) / 60000);
+      throw new functions.https.HttpsError(
+        'resource-exhausted',
+        `Too many failed attempts. Device is temporarily locked out. Try again in ${remainingMin} minutes.`
+      );
+    }
+  }
+
+  // 2. Hash and lookup the PIN
+  const pinHash = crypto.createHash('sha256').update(pin).digest('hex');
+  const lookupSnap = await db.ref(`pin_lookups/${pinHash}`).once('value');
+
+  if (!lookupSnap.exists()) {
+    // Increment failures
+    let attempts = 1;
+    let lockedUntil = null;
+
+    if (failureData) {
+      attempts = (failureData.attempts || 0) + 1;
+      if (attempts >= 5) {
+        lockedUntil = Date.now() + 15 * 60 * 1000; // 15 mins lockout
+      }
+    }
+
+    await failureRef.set({
+      attempts,
+      lockedUntil,
+      lastAttempt: admin.database.ServerValue.TIMESTAMP,
+    });
+
+    throw new functions.https.HttpsError(
+      'unauthenticated',
+      'Invalid PIN.'
+    );
+  }
+
+  const lookupData = lookupSnap.val();
+  const uid = lookupData.uid;
+
+  // 3. Retrieve user profile and perform validation
+  const userRef = db.ref(`users/${uid}`);
+  const userSnap = await userRef.once('value');
+  const userData = userSnap.val();
+
+  if (!userData || userData.status === 'blocked') {
+    throw new functions.https.HttpsError(
+      'permission-denied',
+      'User account is disabled or does not exist.'
+    );
+  }
+
+  if (userData.pinStatus !== 'active' || userData.appPinHash !== pinHash) {
+    throw new functions.https.HttpsError(
+      'unauthenticated',
+      'PIN is inactive or has been revoked.'
+    );
+  }
+
+  // 4. Multiple Devices Check (Enabled/disabled by admin settings)
+  const settingsSnap = await db.ref('settings/allowMultipleDevices').once('value');
+  const allowMultipleDevices = settingsSnap.exists() ? settingsSnap.val() : true;
+
+  const devicesRef = db.ref(`devices/${uid}`);
+  const devicesSnap = await devicesRef.once('value');
+  let activeDeviceCount = 0;
+  let isThisDeviceActive = false;
+
+  if (devicesSnap.exists()) {
+    const devices = devicesSnap.val();
+    for (const devId in devices) {
+      if (devices[devId].status === 'active') {
+        activeDeviceCount++;
+        if (devId === deviceId) {
+          isThisDeviceActive = true;
+        }
+      }
+    }
+  }
+
+  if (!allowMultipleDevices && activeDeviceCount > 0 && !isThisDeviceActive) {
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      'Multiple device access is disabled. An active session already exists on another device.'
+    );
+  }
+
+  if (activeDeviceCount >= 2 && !isThisDeviceActive) {
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      'Maximum device limit reached (2 devices).'
+    );
+  }
+
+  // Register or check-in device
+  await db.ref(`devices/${uid}/${deviceId}`).set({
+    id: deviceId,
+    userId: uid,
+    deviceModel: deviceModel || 'Generic Device',
+    osVersion: osVersion || 'unknown',
+    registeredAt: admin.database.ServerValue.TIMESTAMP,
+    lastUsedAt: admin.database.ServerValue.TIMESTAMP,
+    status: 'active',
+  });
+
+  // 5. Success cleanup & update stats
+  await failureRef.remove(); // Reset failures
+  await userRef.update({
+    pinLastUsed: admin.database.ServerValue.TIMESTAMP,
+  });
+
+  // Generate secure custom token
+  const customToken = await admin.auth().createCustomToken(uid);
+
+  return {
+    customToken,
+    user: {
+      uid,
+      email: userData.email,
+      name: userData.name,
+    }
+  };
+});
+

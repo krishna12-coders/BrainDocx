@@ -25,6 +25,7 @@ interface AuthContextType {
   register: (email: string, password: string, name: string) => Promise<void>;
   logout: () => Promise<void>;
   loginWithGoogle: () => Promise<void>;
+  loginWithPin: (pin: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -185,6 +186,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // 7. Sign in with PIN
+  const loginWithPin = async (pin: string) => {
+    setLoading(true);
+    try {
+      const devId = await getOrCreateDeviceId();
+      const verifyPinFn = httpsCallable(functions, 'verifyPin');
+      const deviceModel = Device.modelName || Device.designName || 'Generic Device';
+      const osVersion = `${Device.osName} ${Device.osVersion}`;
+
+      const res: any = await verifyPinFn({
+        pin: pin.trim(),
+        deviceId: devId,
+        deviceModel,
+        osVersion,
+      });
+
+      if (res.data && res.data.customToken) {
+        const { signInWithCustomToken } = await import('firebase/auth');
+        await signInWithCustomToken(auth, res.data.customToken);
+      } else {
+        throw new Error('Verification failed. Invalid response from server.');
+      }
+    } catch (error: any) {
+      setLoading(false);
+      throw error;
+    }
+  };
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
@@ -218,7 +247,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, deviceId, loading, login, register, logout, loginWithGoogle }}>
+    <AuthContext.Provider value={{ user, deviceId, loading, login, register, logout, loginWithGoogle, loginWithPin }}>
       {children}
     </AuthContext.Provider>
   );
